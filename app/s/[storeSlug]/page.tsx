@@ -1,866 +1,521 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
-type MenuItem = {
-  id: string
-  name: string
-  price: number
-  desc: string
-  featured?: boolean
-  prepTime?: number
-  category: string
-  soldOut?: boolean
-  emoji?: string
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
 }
 
-type CartItem = MenuItem & {
-  qty: number
-  note: string
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
 }
 
-const DEMO_MENU: MenuItem[] = [
-  {
-    id: '1',
-    name: '紅燒牛肉麵',
-    price: 180,
-    desc: '滷足 8 小時牛肋條，湯頭濃郁帶醬香。',
-    featured: true,
-    prepTime: 8,
-    category: '主食',
-    emoji: '🍜',
-  },
-  {
-    id: '2',
-    name: '清燉牛肉麵',
-    price: 170,
-    desc: '清爽湯頭，溫潤回甘，層次乾淨俐落。',
-    prepTime: 8,
-    category: '主食',
-    emoji: '🍜',
-  },
-  {
-    id: '3',
-    name: '牛筋拌麵',
-    price: 150,
-    desc: 'Q 彈牛筋搭配特製醬汁，香氣厚實。',
-    prepTime: 8,
-    category: '主食',
-    emoji: '🍜',
-  },
-  {
-    id: '4',
-    name: '滷味拼盤',
-    price: 120,
-    desc: '豆干、海帶、滷蛋與牛腱切片，經典搭配。',
-    prepTime: 5,
-    category: '小菜',
-    emoji: '🥢',
-  },
-  {
-    id: '5',
-    name: '燙青菜',
-    price: 60,
-    desc: '每日新鮮時蔬，簡單清爽。',
-    prepTime: 3,
-    category: '小菜',
-    emoji: '🥬',
-  },
-  {
-    id: '6',
-    name: '古早味紅茶',
-    price: 40,
-    desc: '冰鎮回甘，適合搭配牛肉麵。',
-    prepTime: 2,
-    category: '飲料',
-    emoji: '🧋',
-  },
-  {
-    id: '7',
-    name: '冬瓜檸檬',
-    price: 55,
-    desc: '酸甜清爽，解膩首選。',
-    prepTime: 2,
-    category: '飲料',
-    emoji: '🍋',
-  },
-  {
-    id: '8',
-    name: '半熟滷蛋',
-    price: 25,
-    desc: '滷香入味，蛋黃濕潤。',
-    prepTime: 2,
-    category: '加點',
-    emoji: '🥚',
-  },
-]
+type Category = '全部' | '主食' | '小菜' | '配品' | '飲料';
 
-const categories = ['全部', '主食', '小菜', '飲料', '加點']
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function getCategory(name: string): Category {
+  if (
+    name.includes('麵') ||
+    name.includes('飯') ||
+    name.includes('米粉') ||
+    name.includes('冬粉')
+  ) return '主食';
 
-function formatPrice(n: number) {
-  return `NT$ ${n.toLocaleString('zh-TW')}`
+  if (
+    name.includes('茶') ||
+    name.includes('奶') ||
+    name.includes('可樂') ||
+    name.includes('紅茶') ||
+    name.includes('綠茶') ||
+    name.includes('冬瓜') ||
+    name.includes('咖啡')
+  ) return '飲料';
+
+  if (name.includes('菜')) return '小菜';
+
+  return '配品';
 }
 
-function getSupabaseClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return null
-  return createClient(url, key)
-}
-
-async function saveOrderToSupabase(
-  supabase: SupabaseClient,
-  payload: {
-    customer_name: string
-    customer_phone: string
-    items_json: {
-      id: string
-      name: string
-      qty: number
-      price: number
-      note: string
-      category: string
-    }[]
-    subtotal: number
-    total_items: number
-    status: string
+function getCardStyle(category: Category) {
+  switch (category) {
+    case '主食': return 'from-amber-950/70 via-orange-950/55 to-zinc-900';
+    case '小菜': return 'from-emerald-950/55 via-slate-900 to-zinc-900';
+    case '配品': return 'from-sky-950/55 via-slate-900 to-zinc-900';
+    case '飲料': return 'from-fuchsia-950/45 via-slate-900 to-zinc-900';
+    default:     return 'from-zinc-900 via-zinc-900 to-black';
   }
-) {
-  const { data, error } = await supabase
-    .from('orders')
-    .insert(payload)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data
 }
 
+function getDescription(name: string) {
+  if (name.includes('清燉')) return '溫潤湯頭，口感清爽，適合喜歡清淡風味的人。';
+  if (name.includes('牛筋')) return '麵體Q彈，帶點嚼勁，香氣更有層次。';
+  if (name.includes('牛肉')) return '經典招牌口味，湯頭濃郁，風味飽滿順口。';
+  if (name.includes('雞腿')) return '份量扎實，口味家常，飽足感十足。';
+  if (name.includes('滷肉飯')) return '台味經典，鹹香下飯，簡單卻非常耐吃。';
+  if (name.includes('菜')) return '清爽配菜，平衡口感，搭配主食剛剛好。';
+  if (name.includes('蛋')) return '簡單加點，口感滑順，搭配主食很適合。';
+  if (name.includes('湯')) return '暖胃順口，適合作為搭配品項。';
+  if (name.includes('茶') || name.includes('飲')) return '清涼解膩，適合搭配熱食一起享用。';
+  return '精選人氣商品，適合搭配店內主打品項。';
+}
+
+function getFoodEmoji(name: string) {
+  if (name.includes('牛')) return '🍜';
+  if (name.includes('雞')) return '🍗';
+  if (name.includes('飯')) return '🍚';
+  if (name.includes('湯')) return '🥣';
+  if (name.includes('茶')) return '🧋';
+  if (name.includes('蛋')) return '🥚';
+  if (name.includes('菜')) return '🥬';
+  return '🍽️';
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 export default function StorePage() {
-  console.log(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [menu, setMenu] = useState<MenuItem[]>([])
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [cartOpen, setCartOpen] = useState(false)
-  const [activeCategory, setActiveCategory] = useState('全部')
-  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({})
-  const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
-  const [nameError, setNameError] = useState('')
-  const [phoneError, setPhoneError] = useState('')
-  const [submitError, setSubmitError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [successOpen, setSuccessOpen] = useState(false)
-  const [successOrderId, setSuccessOrderId] = useState('')
-  const [addedId, setAddedId] = useState<string | null>(null)
+  const storeSlug =
+    (params?.storeSlug as string) ||
+    (params?.slug as string) ||
+    '';
 
-  const supabase = useMemo(() => getSupabaseClient(), [])
+  // ── URL params ────────────────────────────────────────────────────────────
+  const urlMode = searchParams.get('mode');
+  const urlTable = searchParams.get('table') ?? '';
 
-  useEffect(() => {
-    setMenu(DEMO_MENU)
-  }, [])
+  // 沒有明確 dinein 就預設 pickup
+  const checkoutMode: 'dinein' | 'pickup' =
+    urlMode === 'dinein' ? 'dinein' : 'pickup';
 
-  useEffect(() => {
-    if (!addedId) return
-    const timer = setTimeout(() => setAddedId(null), 800)
-    return () => clearTimeout(timer)
-  }, [addedId])
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<Category>('全部');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [isCartLoaded, setIsCartLoaded] = useState(false);
 
-  useEffect(() => {
-    document.body.style.overflow = cartOpen || successOpen ? 'hidden' : ''
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [cartOpen, successOpen])
-
-  const filteredMenu = useMemo(() => {
-    if (activeCategory === '全部') return menu
-    return menu.filter((item) => item.category === activeCategory)
-  }, [menu, activeCategory])
-
-  const cartCount = useMemo(
-    () => cart.reduce((sum, item) => sum + item.qty, 0),
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const totalItems = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
     [cart]
-  )
+  );
 
-  const subtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.qty * item.price, 0),
+  const totalAmount = useMemo(
+    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cart]
-  )
+  );
 
-  const cartPreview = useMemo(() => cart.slice(0, 4), [cart])
+  const filteredItems = useMemo(() => {
+    if (selectedCategory === '全部') return menuItems;
+    return menuItems.filter((item) => getCategory(item.name) === selectedCategory);
+  }, [menuItems, selectedCategory]);
 
-  const pageBottomPadding = cart.length === 0 ? 'pb-[136px]' : 'pb-[220px]'
-
-  const getSelectedQty = (id: string) => selectedQty[id] || 1
-
-  const changeSelectedQty = (id: string, type: 'plus' | 'minus') => {
-    setSelectedQty((prev) => {
-      const current = prev[id] || 1
-      const next = type === 'plus' ? current + 1 : Math.max(1, current - 1)
-      return { ...prev, [id]: next }
-    })
-  }
-
-  const addToCart = (item: MenuItem) => {
-    if (item.soldOut) return
-    const qtyToAdd = getSelectedQty(item.id)
-
-    setCart((prev) => {
-      const exists = prev.find((i) => i.id === item.id)
-      if (exists) {
-        return prev.map((i) =>
-          i.id === item.id ? { ...i, qty: i.qty + qtyToAdd } : i
-        )
-      }
-      return [...prev, { ...item, qty: qtyToAdd, note: '' }]
-    })
-
-    setAddedId(item.id)
-  }
-
-  const getButtonLabel = (item: MenuItem) => {
-    const qty = getSelectedQty(item.id)
-    const exists = cart.find((c) => c.id === item.id)
-
-    if (item.soldOut) return '已售完'
-    if (addedId === item.id && !exists) return `已加入 ${qty} 份`
-    if (exists) return `再加 ${qty} 份`
-    return `加入訂單 ${qty} 份`
-  }
-
-  const updateCartQty = (id: string, type: 'plus' | 'minus') => {
-    setCart((prev) =>
-      prev
-        .map((item) => {
-          if (item.id !== id) return item
-          const nextQty = type === 'plus' ? item.qty + 1 : item.qty - 1
-          return { ...item, qty: nextQty }
-        })
-        .filter((item) => item.qty > 0)
-    )
-  }
-
-  const updateCartNote = (id: string, note: string) => {
-    setCart((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, note } : item))
-    )
-  }
-
-  const validateCheckout = () => {
-    let ok = true
-    setNameError('')
-    setPhoneError('')
-    setSubmitError('')
-
-    if (!customerName.trim()) {
-      setNameError('請填寫姓名')
-      ok = false
-    }
-
-    if (!/^09\d{8}$/.test(customerPhone.trim())) {
-      setPhoneError('請輸入正確的台灣手機號碼')
-      ok = false
-    }
-
-    if (cart.length === 0) {
-      setSubmitError('購物車是空的，請先加入餐點')
-      ok = false
-    }
-
-    return ok
-  }
-
-  const handleSubmitOrder = async () => {
-    if (!validateCheckout()) return
-
-    if (!supabase) {
-      setSubmitError(
-        '尚未讀到 Supabase 環境變數，請確認 NEXT_PUBLIC_SUPABASE_URL 與 NEXT_PUBLIC_SUPABASE_ANON_KEY'
-      )
-      return
-    }
-
+  // ── 初始化：先讀 localStorage 的 cart，再允許同步寫回 ─────────────────────
+  useEffect(() => {
     try {
-      setSubmitting(true)
-
-      const payload = {
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim(),
-        items_json: cart.map((item) => ({
-          id: item.id,
-          name: item.name,
-          qty: item.qty,
-          price: item.price,
-          note: item.note,
-          category: item.category,
-        })),
-        subtotal,
-        total_items: cartCount,
-        status: 'new',
+      const savedCart = localStorage.getItem('nowait_cart');
+      if (savedCart) {
+        const parsed = JSON.parse(savedCart);
+        setCart(Array.isArray(parsed) ? parsed : []);
       }
-
-      const inserted = await saveOrderToSupabase(supabase, payload)
-
-      setSuccessOrderId(
-        String(inserted?.id ?? `NW-${Date.now().toString().slice(-6)}`)
-      )
-      setSuccessOpen(true)
-      setCartOpen(false)
-      setCart([])
-      setCustomerName('')
-      setCustomerPhone('')
-      setSelectedQty({})
-    } catch (error: any) {
-      setSubmitError(error?.message || '訂單送出失敗，請稍後再試')
+    } catch (e) {
+      console.error('[Store] localStorage cart 讀取失敗', e);
     } finally {
-      setSubmitting(false)
+      setIsCartLoaded(true);
     }
+  }, []);
+
+  // ── cart 變動時同步回 localStorage（避免初始空值覆蓋）─────────────────────
+  useEffect(() => {
+    if (!isCartLoaded) return;
+    localStorage.setItem('nowait_cart', JSON.stringify(cart));
+  }, [cart, isCartLoaded]);
+
+  // ── Fetch menu ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        setError('');
+
+        const { data, error: supabaseError } = await supabase
+          .from('menu')
+          .select('*')
+          .order('price', { ascending: false });
+
+        if (supabaseError) throw supabaseError;
+
+        setMenuItems(data || []);
+      } catch (err) {
+        console.error('[Store] 菜單載入失敗', err);
+        setError('菜單暫時無法載入，請稍後再試。');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMenu();
+  }, []);
+
+  // ── Cart handlers ─────────────────────────────────────────────────────────
+  const addToCart = (item: MenuItem) => {
+    setCart((prev) => {
+      const found = prev.find((p) => p.id === item.id);
+      if (found) {
+        return prev.map((p) =>
+          p.id === item.id ? { ...p, quantity: p.quantity + 1 } : p
+        );
+      }
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  };
+
+  const updateQuantity = (id: string, nextQty: number) => {
+    if (nextQty <= 0) {
+      setCart((prev) => prev.filter((item) => item.id !== id));
+      return;
+    }
+
+    setCart((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, quantity: nextQty } : item
+      )
+    );
+  };
+
+  // ── Checkout ──────────────────────────────────────────────────────────────
+  const handleCheckout = () => {
+    if (cart.length === 0) {
+      alert('請先加入餐點');
+      return;
+    }
+
+    // 保留店家資訊
+    localStorage.setItem(
+      'nowait_store',
+      JSON.stringify({
+        name: '陳記正宗牛肉麵',
+        slug: storeSlug || 'chen-beef-noodle',
+      })
+    );
+    localStorage.setItem('nowait_store_slug', storeSlug || 'chen-beef-noodle');
+
+    const checkoutParams = new URLSearchParams();
+    checkoutParams.set('mode', checkoutMode);
+    if (urlTable) checkoutParams.set('table', urlTable);
+
+    router.push(`/checkout?${checkoutParams.toString()}`);
+  };
+
+  // ── Guards ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-xl tracking-wide text-white/60">載入菜單中...</div>
+      </main>
+    );
   }
 
-  return (
-    <main className="min-h-screen bg-[#05070c] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,197,66,0.14),transparent_24%),radial-gradient(circle_at_top_right,rgba(23,48,122,0.28),transparent_28%),radial-gradient(circle_at_bottom,rgba(12,22,68,0.28),transparent_24%)]" />
-
-      <div className={`relative mx-auto max-w-6xl px-4 pt-8 sm:px-6 lg:px-8 ${pageBottomPadding}`}>
-        <section className="mx-auto max-w-6xl">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f4d166] to-[#c9a12f] text-xl font-semibold text-black shadow-[0_8px_30px_rgba(244,209,102,0.25)]">
-                N
-              </div>
-              <div>
-                <div className="text-3xl font-semibold tracking-tight text-[#f5ead0]">
-                  NoWait
-                </div>
-                <div className="mt-1 text-sm tracking-[0.18em] text-[#d9b84e]">
-                  牛肉麵專門店 ・ 台南
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-full border border-[#d8b246]/25 bg-[#d8b246]/10 px-4 py-2 text-sm text-[#f3d67b]">
-              ⚡ LIVE
-            </div>
-          </div>
-
-          <div className="mt-8 border-t border-white/10 pt-10 text-center">
-            <h1
-              className="text-5xl font-semibold leading-none sm:text-6xl lg:text-7xl"
-              style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
-            >
-              <span className="block text-white">陳記正宗</span>
-              <span className="mt-3 block text-[#e0b843]">牛肉麵</span>
-            </h1>
-
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm text-white/70">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.8)]" />
-                營業中
-              </div>
-              <div>11:00 – 21:00</div>
-              <div>👥 今日 87 單</div>
-            </div>
-
-            <div className="mx-auto mt-8 grid max-w-6xl gap-4 rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(16,25,58,.78),rgba(8,13,28,.9))] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.35)] sm:grid-cols-3">
-              <div className="text-left">
-                <div className="text-xs tracking-[0.18em] text-white/35">目前隊伍</div>
-                <div className="mt-3 text-3xl font-semibold text-white">4 組</div>
-              </div>
-              <div className="text-left border-white/10 sm:border-l sm:pl-6">
-                <div className="text-xs tracking-[0.18em] text-white/35">預計等待</div>
-                <div className="mt-3 text-3xl font-semibold text-white">≈ 12 分</div>
-              </div>
-              <div className="text-left border-white/10 sm:border-l sm:pl-6">
-                <div className="text-xs tracking-[0.18em] text-white/35">廚房狀態</div>
-                <div className="mt-3 text-2xl font-semibold text-green-400">● 順暢接單中</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto mt-10 max-w-6xl">
-          <div className="flex flex-wrap gap-3">
-            {categories.map((category) => {
-              const active = category === activeCategory
-              return (
-                <button
-                  key={category}
-                  onClick={() => setActiveCategory(category)}
-                  className={`min-w-[92px] rounded-full border px-6 py-3 text-base font-medium transition-all ${
-                    active
-                      ? 'border-[#d9b84e]/40 bg-[#d9b84e] text-black'
-                      : 'border-white/10 bg-white/[0.02] text-white/75 hover:bg-white/[0.05]'
-                  }`}
-                >
-                  {category}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="mx-auto mt-10 max-w-6xl">
-          <div className="mb-5 flex items-end justify-between">
-            <h2
-              className="text-5xl font-semibold text-white"
-              style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
-            >
-              {activeCategory === '全部' ? '精選菜單' : activeCategory}
-            </h2>
-            <div className="text-sm text-white/50">{filteredMenu.length} 品項</div>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {filteredMenu.map((item) => (
-              <MenuCard
-                key={item.id}
-                item={item}
-                qty={getSelectedQty(item.id)}
-                onMinus={() => changeSelectedQty(item.id, 'minus')}
-                onPlus={() => changeSelectedQty(item.id, 'plus')}
-                onAdd={() => addToCart(item)}
-                buttonLabel={getButtonLabel(item)}
-                justAdded={addedId === item.id}
-              />
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <button
-        onClick={() => setCartOpen(true)}
-        className="fixed bottom-5 left-1/2 z-40 w-[calc(100%-20px)] max-w-4xl -translate-x-1/2 rounded-[28px] border border-[#d9b84e]/25 bg-[#0d111c]/95 px-5 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl"
-      >
-        <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="text-left">
-            <div className="text-sm tracking-[0.18em] text-white/40 uppercase">
-              Order Summary
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="mt-2 text-base text-white/55">尚未加入餐點</div>
-            ) : (
-              <>
-                <div className="mt-3 rounded-2xl border border-[#d9b84e]/12 bg-[#d9b84e]/6 p-4">
-                  <div className="space-y-2">
-                    {cartPreview.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-4"
-                      >
-                        <span className="truncate text-sm font-medium text-white/90">
-                          {item.name} <span className="text-[#f0cb63]">×{item.qty}</span>
-                        </span>
-                        <span className="shrink-0 text-sm font-semibold text-[#f1d06f]">
-                          {formatPrice(item.qty * item.price)}
-                        </span>
-                      </div>
-                    ))}
-
-                    {cart.length > 4 && (
-                      <div className="pt-1 text-sm text-white/45">
-                        另有 {cart.length - 4} 項，點擊查看完整明細
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 h-px bg-gradient-to-r from-transparent via-[#d9b84e]/50 to-transparent" />
-
-                <div className="mt-4 flex items-end justify-between">
-                  <div className="text-base text-white/75">{cartCount} 件商品</div>
-                  <div className="text-right">
-                    <div className="text-sm text-white/45">應付金額</div>
-                    <div className="text-2xl font-bold text-[#f0cb63] drop-shadow-[0_0_16px_rgba(240,203,99,0.35)]">
-                      {formatPrice(subtotal)}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="rounded-full bg-[#d9b84e]/15 px-6 py-4 text-sm font-medium text-[#f2d577]">
-            查看訂單並結帳
-          </div>
-        </div>
-      </button>
-
-      <div
-        className={`fixed inset-0 z-50 transition-all duration-300 ${
-          cartOpen
-            ? 'pointer-events-auto bg-black/60 opacity-100'
-            : 'pointer-events-none bg-black/0 opacity-0'
-        }`}
-        onClick={() => setCartOpen(false)}
-      />
-
-      <aside
-        className={`fixed bottom-0 left-0 right-0 z-[60] mx-auto max-h-[90vh] max-w-6xl rounded-t-[32px] border border-white/10 bg-[#090d17] shadow-[0_-18px_80px_rgba(0,0,0,0.55)] transition-transform duration-300 ${
-          cartOpen ? 'translate-y-0' : 'translate-y-full'
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+  if (error) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+        <div className="text-center space-y-5">
+          <p className="text-4xl">⚠️</p>
           <div>
-            <div className="text-xs tracking-[0.18em] text-white/35 uppercase">
-              Checkout
-            </div>
-            <h3
-              className="mt-2 text-3xl font-semibold text-white"
-              style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
-            >
-              訂單確認
-            </h3>
+            <p className="text-lg font-semibold text-white mb-1">載入失敗</p>
+            <p className="text-sm text-white/40">{error}</p>
           </div>
-
           <button
-            onClick={() => setCartOpen(false)}
-            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10"
+            onClick={() => window.location.reload()}
+            className="px-8 py-3 bg-yellow-400 text-black rounded-xl font-bold hover:bg-yellow-300 active:scale-95 transition-all"
           >
-            關閉
+            重新載入
           </button>
         </div>
+      </main>
+    );
+  }
 
-        <div className="grid max-h-[calc(90vh-96px)] overflow-y-auto lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
-            {cart.length === 0 ? (
-              <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
-                <div className="text-5xl">🛒</div>
-                <h4 className="mt-5 text-2xl font-semibold text-white">
-                  購物車是空的
-                </h4>
-                <p className="mt-3 max-w-md text-sm leading-7 text-white/50">
-                  先從上方菜單加入餐點，這裡會顯示完整訂單清單、備註、姓名、手機與送出訂單按鈕。
-                </p>
+  // ── Main Render ───────────────────────────────────────────────────────────
+  return (
+    <main className="min-h-screen bg-black text-white">
+      <div className="mx-auto max-w-[1520px] px-6 py-10 lg:px-10">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-10">
+          {/* LEFT */}
+          <section>
+            <header className="mb-10">
+              <div className="border-b border-white/10 pb-5">
+                <div className="flex flex-col gap-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-300 to-yellow-500 text-black font-black text-xl">
+                      N
+                    </div>
+                    <div>
+                      <div className="text-base uppercase tracking-[0.32em] text-white/60">
+                        NoWait
+                      </div>
+                      <div className="mt-1 text-base text-white/80">
+                        牛肉麵專門店・台南
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full text-center">
+                    <h1 className="text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.08]">
+                      陳記正宗牛肉麵
+                    </h1>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {cart.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,26,56,.75),rgba(10,13,26,.92))] p-5"
+
+              <div className="border-b border-white/10 py-5">
+                <div className="flex flex-wrap items-center justify-center gap-4 text-base sm:text-lg text-white/80">
+                  <span className="whitespace-nowrap">
+                    目前席位 <span className="text-yellow-400 font-semibold">4 組</span>
+                  </span>
+                  <span className="text-white/20">|</span>
+                  <span className="whitespace-nowrap">
+                    預計等待 <span className="text-yellow-400 font-semibold">12 分</span>
+                  </span>
+                  <span className="text-white/20">|</span>
+                  <span className="whitespace-nowrap text-green-400">
+                    ● 廚房順暢接單中
+                  </span>
+                  <span className="text-white/20">|</span>
+                  <span className="whitespace-nowrap">🟢 11:00 - 21:00</span>
+                </div>
+              </div>
+
+              {checkoutMode === 'dinein' && (
+                <div className="mt-4 flex items-center justify-center gap-2 text-sm text-green-400/80">
+                  <span className="w-2 h-2 rounded-full bg-green-400 inline-block animate-pulse" />
+                  店內用餐模式
+                  {urlTable && (
+                    <span className="text-yellow-400 font-semibold ml-1">
+                      ・桌號 {urlTable}
+                    </span>
+                  )}
+                </div>
+              )}
+            </header>
+
+            {/* Category Filter */}
+            <div className="mb-10 border-b border-white/10 pb-5">
+              <div className="flex flex-wrap items-center gap-6 text-base sm:text-lg">
+                {(['全部', '主食', '小菜', '配品', '飲料'] as Category[]).map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setSelectedCategory(category)}
+                    className={`transition-all ${
+                      selectedCategory === category
+                        ? 'text-yellow-400 font-semibold'
+                        : 'text-white/50 hover:text-white/85'
+                    }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-2xl">
-                            {item.emoji || '🍽️'}
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Menu Header */}
+            <div className="mb-8 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.28em] text-white/35 mb-3">
+                  Signature Menu
+                </p>
+                <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight">
+                  精選菜單
+                </h2>
+              </div>
+              <p className="text-base text-white/35">{filteredItems.length} items</p>
+            </div>
+
+            {/* Menu Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
+              {filteredItems.map((item) => {
+                const category = getCategory(item.name);
+                const qty = cart.find((c) => c.id === item.id)?.quantity || 0;
+
+                return (
+                  <article
+                    key={item.id}
+                    className="group overflow-hidden rounded-[28px] border border-white/10 bg-[#0a0a0a] transition-all duration-300 hover:-translate-y-1 hover:border-yellow-400/25 hover:shadow-[0_20px_60px_rgba(234,179,8,0.08)]"
+                  >
+                    <div className={`bg-gradient-to-br ${getCardStyle(category)} p-5`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm uppercase tracking-[0.22em] text-white/60">
+                            {category}
+                          </p>
+                          <h3 className="mt-3 text-2xl font-semibold tracking-tight">
+                            {item.name}
+                          </h3>
+                        </div>
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-3xl">
+                          {getFoodEmoji(item.name)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-6">
+                      <p className="text-base leading-7 text-white/55 min-h-[84px]">
+                        {getDescription(item.name)}
+                      </p>
+
+                      <div className="mt-5 flex items-center justify-between">
+                        <p className="text-3xl font-bold text-yellow-400">
+                          NT${item.price}
+                        </p>
+                        <p className="text-base text-white/35">
+                          已選 <span className="text-white font-semibold">{qty}</span> 份
+                        </p>
+                      </div>
+
+                      <div className="mt-5 flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => addToCart(item)}
+                          className="rounded-full border border-yellow-400/40 bg-yellow-400/10 px-5 py-3 text-base font-semibold text-yellow-300 transition hover:bg-yellow-400/20"
+                        >
+                          + 加入選單
+                        </button>
+
+                        {qty > 0 && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.id, qty - 1)}
+                              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-lg hover:bg-white/10 active:scale-90 transition-all"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[28px] text-center text-base font-semibold">
+                              {qty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.id, qty + 1)}
+                              className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-400 text-lg font-semibold text-black hover:bg-yellow-300 active:scale-90 transition-all"
+                            >
+                              +
+                            </button>
                           </div>
-                          <div>
-                            <h4 className="text-xl font-semibold text-white">
-                              {item.name}
-                            </h4>
-                            <p className="mt-1 text-sm text-white/50">
-                              單價 {formatPrice(item.price)}
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* RIGHT SIDEBAR */}
+          <aside className="xl:sticky xl:top-6 h-fit">
+            <div className="rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="mb-5">
+                <div className="text-sm uppercase tracking-[0.24em] text-white/35 mb-2">
+                  Receipt
+                </div>
+                <h2 className="text-3xl font-semibold">陳記正宗牛肉麵 訂單</h2>
+              </div>
+
+              <div className="border-t border-dashed border-white/10 pt-4">
+                {cart.length === 0 ? (
+                  <div className="py-8 text-center text-white/35 text-base">
+                    購物車是空的
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {cart.map((item) => (
+                      <div key={item.id}>
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-medium">{item.name}</p>
+                            <p className="text-sm text-white/35">
+                              NT${item.price} × {item.quantity}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-yellow-400">
+                              NT${item.price * item.quantity}
                             </p>
                           </div>
                         </div>
 
-                        <div className="mt-4">
-                          <label className="mb-2 block text-sm text-white/60">
-                            備註
-                          </label>
-                          <textarea
-                            value={item.note}
-                            onChange={(e) => updateCartNote(item.id, e.target.value)}
-                            placeholder="例如：不要香菜、少辣、麵硬一點..."
-                            className="min-h-[90px] w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#d9b84e]/40"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <div className="inline-flex items-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => updateCartQty(item.id, 'minus')}
-                            className="px-4 py-3 text-white/70"
+                            type="button"
+                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                            className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2.5 text-base hover:bg-white/10 active:scale-95 transition-all"
                           >
                             −
                           </button>
-                          <div className="min-w-[48px] text-center text-sm font-medium text-white">
-                            {item.qty}
+                          <div className="min-w-[44px] text-center text-base font-semibold">
+                            {item.quantity}
                           </div>
                           <button
-                            onClick={() => updateCartQty(item.id, 'plus')}
-                            className="px-4 py-3 text-white/70"
+                            type="button"
+                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                            className="flex-1 rounded-lg bg-yellow-400 py-2.5 text-base font-semibold text-black hover:bg-yellow-300 active:scale-95 transition-all"
                           >
-                            ＋
+                            +
                           </button>
                         </div>
 
-                        <div className="mt-4 text-lg font-semibold text-[#f0cb63]">
-                          {formatPrice(item.qty * item.price)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="p-6">
-            <div className="rounded-[30px] border-2 border-[#d9b84e]/25 bg-[linear-gradient(180deg,rgba(217,184,78,.10),rgba(18,20,28,.9))] p-6 shadow-[0_12px_40px_rgba(217,184,78,0.08)]">
-              <div className="mb-5">
-                <div className="text-xs tracking-[0.18em] text-[#e0c46a]/70 uppercase">
-                  Checkout
-                </div>
-                <h4
-                  className="mt-2 text-3xl font-semibold text-white"
-                  style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
-                >
-                  確認訂單
-                </h4>
-                <p className="mt-2 text-sm leading-7 text-white/50">
-                  請填寫姓名與手機，我們收到後會立即安排製作。
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm text-white/80">
-                    ✦ 姓名
-                  </label>
-                  <input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="請輸入訂購人姓名"
-                    className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-base text-white outline-none placeholder:text-white/25 focus:border-[#d9b84e]/40"
-                  />
-                  {nameError && (
-                    <p className="mt-2 text-sm text-rose-300">{nameError}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm text-white/80">
-                    ✦ 手機
-                  </label>
-                  <input
-                    value={customerPhone}
-                    onChange={(e) =>
-                      setCustomerPhone(
-                        e.target.value.replace(/\D/g, '').slice(0, 10)
-                      )
-                    }
-                    inputMode="numeric"
-                    placeholder="09xxxxxxxx"
-                    className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-base text-white outline-none placeholder:text-white/25 focus:border-[#d9b84e]/40"
-                  />
-                  {phoneError && (
-                    <p className="mt-2 text-sm text-rose-300">{phoneError}</p>
-                  )}
-                </div>
-
-                <div className="rounded-[24px] border border-[#d9b84e]/12 bg-[#d9b84e]/6 p-4">
-                  <div className="space-y-2">
-                    {cart.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-4"
-                      >
-                        <span className="truncate text-sm font-medium text-white/90">
-                          {item.name} <span className="text-[#f0cb63]">×{item.qty}</span>
-                        </span>
-                        <span className="shrink-0 text-sm font-semibold text-[#f1d06f]">
-                          {formatPrice(item.qty * item.price)}
-                        </span>
+                        <div className="mt-4 border-b border-dashed border-white/10" />
                       </div>
                     ))}
                   </div>
-
-                  <div className="my-4 h-px bg-gradient-to-r from-transparent via-[#d9b84e]/50 to-transparent" />
-
-                  <div className="flex items-end justify-between">
-                    <span className="text-base text-white/75">應付金額</span>
-                    <span className="text-2xl font-bold text-[#f0cb63] drop-shadow-[0_0_18px_rgba(240,203,99,0.4)]">
-                      {formatPrice(subtotal)}
-                    </span>
-                  </div>
-                </div>
-
-                {submitError && (
-                  <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
-                    {submitError}
-                  </div>
                 )}
-
-                <button
-                  onClick={handleSubmitOrder}
-                  disabled={submitting || cart.length === 0}
-                  className={`w-full rounded-2xl px-4 py-4 text-base font-semibold transition ${
-                    submitting || cart.length === 0
-                      ? 'cursor-not-allowed border border-white/10 bg-white/5 text-white/35'
-                      : 'border border-[#d9b84e]/30 bg-gradient-to-r from-[#cfab3d] to-[#f0cb63] text-[#221700] shadow-[0_10px_30px_rgba(217,184,78,0.22)] hover:brightness-105'
-                  }`}
-                >
-                  {submitting
-                    ? '訂單建立中...'
-                    : `確認送出訂單｜${formatPrice(subtotal)}`}
-                </button>
-
-                <p className="text-xs leading-6 text-white/35">
-                  手機格式需為台灣手機，例如 0912345678。訂單將寫入 Supabase 的
-                  orders 資料表。
-                </p>
               </div>
-            </div>
-          </div>
-        </div>
-      </aside>
 
-      {successOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-[32px] border border-[#d9b84e]/20 bg-[#0b0f19] p-8 text-center shadow-[0_25px_80px_rgba(0,0,0,0.6)]">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-green-400/25 bg-green-500/10 text-4xl">
-              ✅
-            </div>
-
-            <h3
-              className="mt-6 text-4xl font-semibold text-white"
-              style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
-            >
-              訂單完成
-            </h3>
-
-            <p className="mt-3 text-base leading-8 text-white/60">
-              我們已收到你的訂單，預計{' '}
-              <span className="text-[#f0cb63]">12 分鐘</span> 內完成。
-            </p>
-
-            <div className="mt-6 rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left">
-              <div className="flex items-center justify-between text-sm text-white/55">
-                <span>訂單編號</span>
-                <span className="font-medium text-white">{successOrderId}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-sm text-white/55">
-                <span>狀態</span>
-                <span className="font-medium text-green-400">已建立</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-sm text-white/55">
-                <span>預估完成</span>
-                <span className="font-medium text-[#f0cb63]">約 12 分鐘</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setSuccessOpen(false)}
-              className="mt-6 w-full rounded-2xl border border-[#d9b84e]/25 bg-[#d9b84e]/12 px-4 py-4 text-sm font-medium text-[#f0cb63] hover:bg-[#d9b84e]/18"
-            >
-              返回菜單
-            </button>
-          </div>
-        </div>
-      )}
-    </main>
-  )
-}
-
-function MenuCard({
-  item,
-  qty,
-  onMinus,
-  onPlus,
-  onAdd,
-  buttonLabel,
-  justAdded,
-}: {
-  item: MenuItem
-  qty: number
-  onMinus: () => void
-  onPlus: () => void
-  onAdd: () => void
-  buttonLabel: string
-  justAdded: boolean
-}) {
-  return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(13,24,58,.78),rgba(6,12,30,.95))] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.28)] transition-all duration-300 hover:border-[#d9b84e]/30 hover:shadow-[0_20px_60px_rgba(217,184,78,0.08)]">
-      <div className="flex h-full flex-col">
-        <div className="min-h-[124px]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              {item.featured && (
-                <div className="mb-3 inline-flex rounded-full bg-[#d9b84e] px-3 py-1 text-xs font-medium text-black">
-                  招牌必點
+              <div className="mt-6 border-t border-dashed border-white/10 pt-4">
+                <div className="mb-2 flex items-center justify-between text-base text-white/55">
+                  <span>項數</span>
+                  <span>{totalItems}</span>
                 </div>
-              )}
+                <div className="flex items-end justify-between">
+                  <span className="text-xl font-semibold">小計</span>
+                  <span className="text-4xl font-bold text-yellow-400">
+                    NT${totalAmount}
+                  </span>
+                </div>
+              </div>
 
-              <h3
-                className="text-2xl font-semibold text-white"
-                style={{ fontFamily: "'Noto Serif TC','Noto Sans TC',serif" }}
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={cart.length === 0}
+                className={`mt-6 w-full rounded-2xl py-4 text-lg font-semibold transition active:scale-95 ${
+                  cart.length === 0
+                    ? 'cursor-not-allowed bg-white/10 text-white/30'
+                    : 'bg-yellow-400 text-black hover:bg-yellow-300'
+                }`}
               >
-                {item.name}
-              </h3>
+                {checkoutMode === 'dinein' ? '📲 確認點餐' : '🛍 前往結帳'}
+              </button>
 
-              <p className="mt-2 line-clamp-2 min-h-[56px] text-sm leading-7 text-white/60">
-                {item.desc}
-              </p>
+              {checkoutMode === 'dinein' && urlTable && (
+                <p className="text-center text-xs text-white/25 mt-3">
+                  桌號 <span className="text-yellow-400/60">{urlTable}</span>
+                </p>
+              )}
             </div>
-
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-3xl">
-              {item.emoji || '🍽️'}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1" />
-
-        <div className="grid min-h-[72px] grid-cols-[1fr_auto] items-end gap-3">
-          <div className="text-5xl font-semibold tracking-tight text-white">
-            ${item.price}
-          </div>
-          <div className="text-sm text-white/50">◔ 約 {item.prepTime || 8} 分</div>
-        </div>
-
-        <div className="mt-5 min-h-[118px] rounded-[22px] border border-white/10 bg-white/[0.03] px-4 py-3">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center">
-            <button
-              onClick={onMinus}
-              disabled={item.soldOut}
-              className="justify-self-start rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-lg text-white/80 transition hover:text-white disabled:opacity-30"
-            >
-              −
-            </button>
-
-            <div className="px-4 text-center">
-              <div className="text-2xl font-semibold text-white">{qty} 份</div>
-            </div>
-
-            <button
-              onClick={onPlus}
-              disabled={item.soldOut}
-              className="justify-self-end rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-lg text-white/80 transition hover:text-white disabled:opacity-30"
-            >
-              ＋
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="text-white/45">此次小計</span>
-            <span className="font-medium text-[#f0cb63]">
-              {formatPrice(item.price * qty)}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <button
-            onClick={onAdd}
-            disabled={item.soldOut}
-            className={`w-full rounded-2xl px-4 py-4 text-base font-medium transition-all duration-300 ${
-              item.soldOut
-                ? 'cursor-not-allowed border border-white/10 bg-white/5 text-white/35'
-                : justAdded
-                ? 'border border-green-400/30 bg-green-500/15 text-green-200'
-                : 'border border-[#5d7dff]/35 bg-[#4a5ee6] text-white hover:bg-[#5569ef]'
-            }`}
-          >
-            {buttonLabel}
-          </button>
+          </aside>
         </div>
       </div>
-    </div>
-  )
+    </main>
+  );
 }
