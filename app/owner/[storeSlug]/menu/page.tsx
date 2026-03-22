@@ -275,7 +275,7 @@ export default function MenuPage() {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased', color: C.text }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased', color: C.text }}>
       <style>{`
         @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
         ::-webkit-scrollbar { width:4px; height:4px; }
@@ -290,6 +290,12 @@ export default function MenuPage() {
         .cat-input:focus     { border-color:${C.gold} !important; outline:none; }
         .cat-item:hover      { background:rgba(255,255,255,0.04) !important; }
         .cat-move-btn:hover  { border-color:${C.gold} !important; color:${C.goldLt} !important; }
+        @media (max-width: 768px) {
+          .menu-page-inner { padding: 20px 16px !important; }
+          .menu-stat-grid  { grid-template-columns: repeat(2,1fr) !important; gap: 10px !important; }
+          .menu-topbar     { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
+          .menu-topbar-actions { flex-wrap: wrap; }
+        }
       `}</style>
 
       {toast && (
@@ -298,15 +304,15 @@ export default function MenuPage() {
         </div>
       )}
 
-      <div style={{ padding: '40px 44px' }}>
+      <div className="menu-page-inner" style={{ padding: '40px 44px' }}>
 
         {/* ── Top Bar ── */}
-        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:'36px' }}>
+        <div className="menu-topbar" style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:'36px' }}>
           <div>
             <h1 style={{ fontWeight:900, fontSize:'32px', color:C.text, letterSpacing:'-0.01em', lineHeight:1, margin:0 }}>菜單管理</h1>
             <p style={{ fontSize:'13px', color:C.muted, marginTop:'8px' }}>管理您的品項、分類、價格與供應狀態</p>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+          <div className="menu-topbar-actions" style={{ display:'flex', alignItems:'center', gap:'12px' }}>
             <div style={{ fontSize:'12px', color:C.muted, background:C.card, border:`1px solid ${C.border}`, padding:'8px 16px', borderRadius:'10px' }}>{clock}</div>
             <button onClick={openAdd} className="add-btn" style={{ display:'flex', alignItems:'center', gap:'8px', background:`linear-gradient(135deg, ${C.gold}, #A0722A)`, color:'#0D0D0F', fontWeight:700, fontSize:'13px', padding:'10px 20px', borderRadius:'10px', border:'none', cursor:'pointer', boxShadow:'0 4px 16px rgba(200,151,58,0.3)', fontFamily:FONT, transition:'all 0.2s' }}>
               ＋ 新增品項
@@ -315,7 +321,7 @@ export default function MenuPage() {
         </div>
 
         {/* ── Stat Cards ── */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'16px', marginBottom:'32px' }}>
+        <div className="menu-stat-grid" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'16px', marginBottom:'32px' }}>
           {[
             { icon:'🍜', value:items.length,         label:'菜單總數', top:C.gold,  bg:C.goldDim,  trend:null },
             { icon:'✅', value:countAvail,            label:'供應中',   top:C.green, bg:C.greenDim, trend:countAvail===items.length&&items.length>0?'● 全上架':null },

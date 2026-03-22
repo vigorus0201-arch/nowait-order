@@ -423,19 +423,15 @@ export default function PosPage() {
         .scrollbar-none::-webkit-scrollbar { display:none; }
         .scrollbar-none { -ms-overflow-style:none; scrollbar-width:none; }
 
-        /* Mobile menu grid: position:fixed bypasses all parent overflow constraints */
+        /* Mobile: pos-outer is fixed viewport container, bypassing body overflow:hidden */
         @media (max-width: 767px) {
-          .menu-grid-scroll {
+          .pos-outer {
             position: fixed !important;
-            top: 160px !important;
+            top: 0 !important;
             bottom: 80px !important;
             left: 0 !important;
             right: 0 !important;
-            overflow-y: scroll !important;
-            -webkit-overflow-scrolling: touch !important;
-            background: ${C.bg} !important;
-            padding: 16px !important;
-            border: 3px solid red !important;
+            z-index: 10 !important;
           }
         }
       `}</style>
@@ -502,7 +498,7 @@ export default function PosPage() {
           {/* ── LEFT: Menu Grid (hidden on mobile when cart tab active) ── */}
           <div
             ref={menuScrollRef}
-            className={`scrollbar-thin menu-grid-scroll${mobileTab === 'cart' ? ' hidden' : ''}`}
+            className={`scrollbar-thin${mobileTab === 'cart' ? ' hidden md:block' : ''}`}
             style={{
               flex: 1, minHeight: 0,
               overflowY: 'scroll',

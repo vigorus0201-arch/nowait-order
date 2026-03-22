@@ -392,7 +392,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased' }}>
 
         {/* ── Filter Bar ── */}
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -506,8 +506,8 @@ export default function OrdersPage() {
         {/* ── MOBILE: Full-screen Detail Overlay ── */}
         {mobileDetailOpen && selectedOrder && (
           <div
-            className="md:hidden"
-            style={{ position: 'fixed', inset: 0, zIndex: 50, background: C.bg, display: 'flex', flexDirection: 'column' }}
+            className="flex md:hidden"
+            style={{ position: 'fixed', inset: 0, zIndex: 50, background: C.bg, flexDirection: 'column' }}
           >
             <OrderDetailPanel
               order={selectedOrder}
