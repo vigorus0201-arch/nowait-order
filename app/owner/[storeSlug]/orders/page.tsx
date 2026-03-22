@@ -129,23 +129,27 @@ function OrderCard({ order, isActive, onClick }: { order: Order; isActive: boole
         outlineOffset: '-1px',
         boxShadow:    isActive ? `0 0 0 1px ${C.goldBdr}, 0 4px 20px rgba(200,151,58,0.1)` : 'none',
         fontFamily:   FONT,
+        width:        '100%',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+      {/* Row 1: order code + status */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', width: '100%' }}>
         <span style={{ fontWeight: 800, color: C.goldLt, fontSize: '15px', letterSpacing: '0.04em' }}>
           #{order.order_code}
         </span>
         <StatusBadge status={order.status} />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+      {/* Row 2: mode badge + name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', width: '100%', minWidth: 0 }}>
         <ModeBadge order={order} />
         {order.customer_name && (
-          <span style={{ fontSize: '12px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: '12px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
             {order.customer_name}
           </span>
         )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Row 3: time + amount */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
         <p style={{ fontSize: '11px', color: C.faint, margin: 0 }}>{formatTime(order.created_at)}</p>
         <span style={{ fontWeight: 700, color: C.text, fontSize: '14px', flexShrink: 0 }}>
           <span style={{ fontSize: '11px', color: C.muted, marginRight: '2px' }}>NT$</span>
