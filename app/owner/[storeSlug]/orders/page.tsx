@@ -376,6 +376,12 @@ export default function OrdersPage() {
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
+        @media (max-width: 768px) {
+          .orders-detail-panel { display: none !important; width: 0 !important; }
+        }
+        @media (min-width: 769px) {
+          .orders-detail-panel { display: flex !important; }
+        }
       `}</style>
 
       {/* Toast */}
@@ -458,7 +464,7 @@ export default function OrdersPage() {
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
 
           {/* ── LEFT: Order List ── */}
-          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0, border: '3px solid red', background: 'rgba(255,0,0,0.1)' }}>
+          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', gap: '16px' }}>
                 <div style={{ width: '36px', height: '36px', border: `3px solid ${C.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
@@ -476,7 +482,7 @@ export default function OrdersPage() {
                   共 {filtered.length} 筆
                 </p>
                 {filtered.map((order) => (
-                  <div key={order.id} className="order-card" style={{ borderRadius: '14px', transition: 'background 0.15s', border: '2px solid blue' }}>
+                  <div key={order.id} className="order-card" style={{ borderRadius: '14px', transition: 'background 0.15s' }}>
                     <OrderCard
                       order={order}
                       isActive={selectedOrder?.id === order.id}
@@ -490,7 +496,7 @@ export default function OrdersPage() {
 
           {/* ── RIGHT: Detail Panel (desktop only) ── */}
           <div
-            className="hidden md:flex"
+            className="orders-detail-panel"
             style={{
               width:         '340px',
               flexShrink:    0,
