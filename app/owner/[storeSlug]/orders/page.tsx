@@ -454,7 +454,7 @@ export default function OrdersPage() {
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 
           {/* ── LEFT: Order List ── */}
-          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', gap: '16px' }}>
                 <div style={{ width: '36px', height: '36px', border: `3px solid ${C.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />

@@ -291,10 +291,24 @@ export default function MenuPage() {
         .cat-item:hover      { background:rgba(255,255,255,0.04) !important; }
         .cat-move-btn:hover  { border-color:${C.gold} !important; color:${C.goldLt} !important; }
         @media (max-width: 768px) {
-          .menu-page-inner { padding: 20px 16px !important; }
+          .menu-page-inner { padding: 20px 16px 100px !important; }
           .menu-stat-grid  { grid-template-columns: repeat(2,1fr) !important; gap: 10px !important; }
           .menu-topbar     { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
           .menu-topbar-actions { flex-wrap: wrap; }
+          .menu-table-head { display: none !important; }
+          .menu-row {
+            display: flex !important;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 14px 16px !important;
+            gap: 6px 10px;
+          }
+          .menu-row > *:nth-child(1) { order: 1; flex: 0 0 44px; }
+          .menu-row > *:nth-child(2) { order: 2; flex: 1 1 120px; min-width: 0; }
+          .menu-row > *:nth-child(4) { order: 3; flex: 0 0 auto; margin-left: auto; text-align: right !important; }
+          .menu-row > *:nth-child(3) { order: 4; flex: 0 0 auto; }
+          .menu-row > *:nth-child(5) { order: 5; flex: 0 0 auto; text-align: left !important; }
+          .menu-row > *:nth-child(6) { order: 6; flex: 1 0 auto; justify-content: flex-end !important; }
         }
       `}</style>
 
@@ -449,7 +463,7 @@ CREATE POLICY "Auth write" ON public.categories FOR ALL USING (auth.role() = 'au
           <div style={{ height:'1px', background:`linear-gradient(90deg, ${C.goldDim}, transparent 60%)` }} />
 
           {/* Table Head */}
-          <div style={{ display:'grid', gridTemplateColumns:TABLE_COLS, padding:'12px 28px', background:C.surface, borderBottom:`1px solid ${C.border}`, alignItems:'center' }}>
+          <div className="menu-table-head" style={{ display:'grid', gridTemplateColumns:TABLE_COLS, padding:'12px 28px', background:C.surface, borderBottom:`1px solid ${C.border}`, alignItems:'center' }}>
             {['', '品項名稱', '分類', '售價', '狀態', '操作'].map((h, i) => (
               <div key={i} style={{ fontSize:'11px', fontWeight:600, color:C.faint, letterSpacing:'0.08em', textTransform:'uppercase', textAlign:i===3?'right':i===4?'center':i===5?'right':'left' }}>{h}</div>
             ))}
