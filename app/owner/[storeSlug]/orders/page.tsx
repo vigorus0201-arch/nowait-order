@@ -376,11 +376,16 @@ export default function OrdersPage() {
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
-        @media (max-width: 768px) {
-          .orders-detail-panel { display: none !important; width: 0 !important; }
-        }
-        @media (min-width: 769px) {
-          .orders-detail-panel { display: flex !important; }
+        /* Mobile: orders-outer is fixed viewport container, same pattern as pos-outer */
+        @media (max-width: 767px) {
+          .orders-outer {
+            position: fixed !important;
+            top: 0 !important;
+            bottom: 80px !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 10 !important;
+          }
         }
       `}</style>
 
@@ -402,7 +407,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased', width: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+      <div className="orders-outer" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased' }}>
 
         {/* ── Filter Bar ── */}
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -461,7 +466,7 @@ export default function OrdersPage() {
         </div>
 
         {/* ── Body ── */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 
           {/* ── LEFT: Order List ── */}
           <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
@@ -496,7 +501,7 @@ export default function OrdersPage() {
 
           {/* ── RIGHT: Detail Panel (desktop only) ── */}
           <div
-            className="orders-detail-panel"
+            className="hidden md:flex"
             style={{
               width:         '340px',
               flexShrink:    0,
