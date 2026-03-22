@@ -28,6 +28,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        {/* Hide Next.js dev tools overlay */}
+        <style>{`nextjs-portal { display: none !important; }`}</style>
       </body>
     </html>
   );

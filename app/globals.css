@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -23,4 +24,15 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Hide Next.js dev tools overlay */
+body > nextjs-portal,
+[data-nextjs-toast],
+#__next-build-watcher,
+nextjs-portal {
+  display: none !important;
+}
+iframe[src*="/_next/static"] {
+  display: none !important;
 }

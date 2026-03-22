@@ -1,8 +1,27 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
 
-type OrderStatus = 'pending' | 'preparing' | 'done';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapRow(row: any) {
+  const items: { id: string; name: string; price: number; qty: number }[] =
+    Array.isArray(row.items_json) ? row.items_json : [];
+  return {
+    id:           row.id as string,
+    orderCode:    (row.order_code ?? row.id.slice(0, 8)) as string,
+    mode:         (row.source ?? 'dinein') as string,
+    table:        (row.table_num ?? undefined) as string | undefined,
+    customerName: (row.customer_name ?? undefined) as string | undefined,
+    notes:        (row.note ?? undefined) as string | undefined,
+    cart:         items.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.qty })),
+    total:        (row.total_amount ?? 0) as number,
+    createdAt:    row.created_at as string,
+    status:       ((row.status ?? 'pending') as OrderStatus),
+  };
+}
+
+type OrderStatus = 'pending' | 'preparing' | 'completed';
 
 interface CartItem {
   id: string;
@@ -13,7 +32,7 @@ interface CartItem {
 
 interface OrderData {
   id: string;
-  mode: 'dinein' | 'pickup';
+  mode: 'dinein' | 'pickup' | 'pos' | string;
   table?: string;
   storeName?: string;
   storeSlug?: string;
@@ -42,21 +61,21 @@ const STATUS_CONFIG: Record<
     label: '新單',
     next: 'preparing',
     nextLabel: '開始製作',
-    color: '#f59e0b',
+    color: '#C8973A',
     bg: '#1c1500',
     border: '#78350f',
-    dot: '#f59e0b',
+    dot: '#C8973A',
   },
   preparing: {
     label: '製作中',
-    next: 'done',
+    next: 'completed',
     nextLabel: '完成出餐',
     color: '#3b82f6',
     bg: '#050d1f',
     border: '#1e3a8a',
     dot: '#3b82f6',
   },
-  done: {
+  completed: {
     label: '已完成',
     next: null,
     nextLabel: null,
@@ -67,7 +86,7 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const STATUS_ORDER: OrderStatus[] = ['pending', 'preparing', 'done'];
+const STATUS_ORDER: OrderStatus[] = ['pending', 'preparing', 'completed'];
 
 type FilterTab = 'all' | OrderStatus;
 
@@ -124,73 +143,69 @@ export default function KitchenPage() {
     }
   }, []);
 
-  // ✅ Load + sound detection
-  const loadOrders = useCallback(() => {
-    try {
-      const raw = localStorage.getItem('nowait_orders');
-      const parsed: OrderData[] = raw ? JSON.parse(raw) : [];
+  // ✅ Load from Supabase + sound detection
+  const loadOrders = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .in('status', ['pending', 'preparing', 'completed'])
+      .order('created_at', { ascending: true });
 
-      // detect new pending orders
-      const newPendingIds = parsed
-        .filter((o) => o.status === 'pending')
-        .map((o) => o.id);
+    if (error) { console.error('[Kitchen] 讀取失敗', error); return; }
 
-      const hasNew = newPendingIds.some(
-        (id) => !prevOrderIdsRef.current.has(id)
-      );
+    const parsed = (data ?? []).map(mapRow);
 
-      if (hasNew && prevOrderIdsRef.current.size > 0) {
-        playAlert();
-      }
+    // detect new pending orders
+    const newPendingIds = parsed
+      .filter((o) => o.status === 'pending')
+      .map((o) => o.id);
 
-      prevOrderIdsRef.current = new Set(parsed.map((o) => o.id));
-      setOrders(parsed);
-    } catch {
-      setOrders([]);
-    } finally {
-      setLoading(false);
+    const hasNew = newPendingIds.some((id) => !prevOrderIdsRef.current.has(id));
+
+    if (hasNew && prevOrderIdsRef.current.size > 0) {
+      playAlert();
     }
+
+    prevOrderIdsRef.current = new Set(parsed.map((o) => o.id));
+    setOrders(parsed);
+    setLoading(false);
   }, [playAlert]);
 
-  // ✅ Auto-refresh every 8s
+  // ✅ Initial load + Realtime subscription
   useEffect(() => {
     if (!mounted) return;
     loadOrders();
-    const interval = setInterval(loadOrders, 8000);
-    return () => clearInterval(interval);
+    const channel = supabase
+      .channel('kitchen-all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadOrders())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [mounted, loadOrders]);
 
-  // ✅ Advance order status
-  const handleAdvance = (id: string) => {
-    setOrders((prev) => {
-      const updated = prev.map((o) => {
-        if (o.id !== id) return o;
-        const next = STATUS_CONFIG[o.status].next;
-        if (!next) return o;
-        return { ...o, status: next };
-      });
-      localStorage.setItem('nowait_orders', JSON.stringify(updated));
-      return updated;
-    });
-  };
+  // ✅ Advance order status → Supabase
+  const handleAdvance = useCallback(async (id: string) => {
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    const next = STATUS_CONFIG[order.status as OrderStatus]?.next;
+    if (!next) return;
+    setOrders((prev) => prev.map((o) => o.id === id ? { ...o, status: next } : o));
+    const { error } = await supabase.from('orders').update({ status: next }).eq('id', id);
+    if (error) { console.error('[Kitchen] 狀態更新失敗', error); loadOrders(); }
+  }, [orders, loadOrders]);
 
-  // ✅ Clear single done order
-  const handleClearSingle = (id: string) => {
-    setOrders((prev) => {
-      const updated = prev.filter((o) => o.id !== id);
-      localStorage.setItem('nowait_orders', JSON.stringify(updated));
-      return updated;
-    });
-  };
+  // ✅ Delete single order → Supabase
+  const handleClearSingle = useCallback(async (id: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+    await supabase.from('orders').delete().eq('id', id);
+  }, []);
 
-  // ✅ Clear all done orders
-  const handleClearDone = () => {
-    setOrders((prev) => {
-      const updated = prev.filter((o) => o.status !== 'done');
-      localStorage.setItem('nowait_orders', JSON.stringify(updated));
-      return updated;
-    });
-  };
+  // ✅ Clear all done orders → Supabase
+  const handleClearDone = useCallback(async () => {
+    const doneIds = orders.filter((o) => o.status === 'completed').map((o) => o.id);
+    if (!doneIds.length) return;
+    setOrders((prev) => prev.filter((o) => o.status !== 'completed'));
+    await supabase.from('orders').delete().in('id', doneIds);
+  }, [orders]);
 
   // ✅ Sort: pending → preparing → done, then by createdAt asc
   const sortedOrders = [...orders].sort((a, b) => {
@@ -208,7 +223,7 @@ export default function KitchenPage() {
   const stats = {
     pending: orders.filter((o) => o.status === 'pending').length,
     preparing: orders.filter((o) => o.status === 'preparing').length,
-    done: orders.filter((o) => o.status === 'done').length,
+    completed: orders.filter((o) => o.status === 'completed').length,
   };
 
   const getElapsed = (createdAt: string) => {
@@ -224,9 +239,9 @@ export default function KitchenPage() {
     <main
       style={{
         minHeight: '100vh',
-        background: '#0a0a0a',
+        background: '#0D0D0F',
         color: '#fff',
-        fontFamily: "'SF Pro Display', -apple-system, sans-serif",
+        fontFamily: "'DM Sans', 'Noto Serif TC', sans-serif",
       }}
     >
       {/* ── HEADER ── */}
@@ -239,7 +254,7 @@ export default function KitchenPage() {
           justifyContent: 'space-between',
           position: 'sticky',
           top: 0,
-          background: '#0a0a0a',
+          background: '#0D0D0F',
           zIndex: 100,
         }}
       >
@@ -306,7 +321,7 @@ export default function KitchenPage() {
             [
               { key: 'pending', label: '新單', emoji: '🟡' },
               { key: 'preparing', label: '製作中', emoji: '🔵' },
-              { key: 'done', label: '已完成', emoji: '🟢' },
+              { key: 'completed', label: '已完成', emoji: '🟢' },
             ] as const
           ).map(({ key, label, emoji }) => (
             <div
@@ -357,7 +372,7 @@ export default function KitchenPage() {
               { key: 'all', label: `全部 (${orders.length})` },
               { key: 'pending', label: `新單 (${stats.pending})` },
               { key: 'preparing', label: `製作中 (${stats.preparing})` },
-              { key: 'done', label: `完成 (${stats.done})` },
+              { key: 'completed', label: `完成 (${stats.completed})` },
             ] as const
           ).map(({ key, label }) => (
             <button
@@ -397,7 +412,7 @@ export default function KitchenPage() {
           ))}
 
           {/* Clear done button */}
-          {stats.done > 0 && (
+          {stats.completed > 0 && (
             <button
               onClick={handleClearDone}
               style={{
@@ -411,7 +426,7 @@ export default function KitchenPage() {
                 fontSize: 13,
               }}
             >
-              清除完成單 ({stats.done})
+              清除完成單 ({stats.completed})
             </button>
           )}
         </div>
@@ -453,7 +468,7 @@ export default function KitchenPage() {
               const cfg = STATUS_CONFIG[order.status];
               const elapsed = getElapsed(order.createdAt);
               const isUrgent =
-                order.status !== 'done' && elapsed >= 10;
+                order.status !== 'completed' && elapsed >= 10;
               const createdTime = new Date(
                 order.createdAt
               ).toLocaleTimeString('zh-TW', {
@@ -679,7 +694,7 @@ export default function KitchenPage() {
 
                     <div style={{ display: 'flex', gap: 8 }}>
                       {/* Done → clear button */}
-                      {order.status === 'done' && (
+                      {order.status === 'completed' && (
                         <button
                           onClick={() => handleClearSingle(order.id)}
                           style={{

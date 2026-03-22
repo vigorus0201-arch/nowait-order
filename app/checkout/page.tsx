@@ -9,6 +9,8 @@ import {
   Suspense,
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { generateOrderCode } from '@/lib/generateOrderCode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CartItem {
@@ -42,9 +44,10 @@ function CheckoutContent() {
   const mode: 'dinein' | 'pickup' | 'preorder' =
     rawMode === 'pickup' || rawMode === 'preorder' ? rawMode : 'dinein';
 
-  const table      = searchParams.get('table') ?? '';
-  const isDineIn   = mode === 'dinein';
-  const isPreOrder = mode === 'pickup' || mode === 'preorder';
+  const isInstore       = searchParams.get('instore') === '1';
+  const table           = searchParams.get('table') ?? '';
+  const isDineIn        = mode === 'dinein';
+  const contactRequired = !isInstore;
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [cart,            setCart]            = useState<CartItem[]>([]);
@@ -112,16 +115,14 @@ function CheckoutContent() {
     localStorage.setItem('nowait_cart', JSON.stringify(cart));
   }, [cart, isCartLoaded]);
 
-  // ── 聯絡資訊草稿即時同步（Problem B 修復）───────────────────────────────────
+  // ── 聯絡資訊草稿即時同步 ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isCartLoaded) return;
-    if (!isPreOrder) return;
-
     localStorage.setItem(
       'nowait_checkout_draft',
       JSON.stringify({ customerName, phone, notes })
     );
-  }, [customerName, phone, notes, isPreOrder, isCartLoaded]);
+  }, [customerName, phone, notes, isCartLoaded]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const total      = useMemo(() => cart.reduce((s, i) => s + i.price * i.quantity, 0), [cart]);
@@ -129,10 +130,10 @@ function CheckoutContent() {
 
   const isPhoneValid   = /^09\d{8}$/.test(phone);
   const isNameValid    = customerName.trim().length > 0;
-  const showNameErr    = submitAttempted && isPreOrder && !isNameValid;
-  const showPhoneErr   = submitAttempted && isPreOrder && phone.trim().length > 0 && !isPhoneValid;
+  const showNameErr    = submitAttempted && contactRequired && !isNameValid;
+  const showPhoneErr   = submitAttempted && contactRequired && !isPhoneValid;
   const showPhoneOk    = phone.trim().length > 0 && isPhoneValid;
-  const contactInvalid = isPreOrder && (!customerName.trim() || !phone.trim() || !isPhoneValid);
+  const contactInvalid = contactRequired && (!customerName.trim() || !phone.trim() || !isPhoneValid);
 
   // ── 數量調整（統一由 useEffect 同步 localStorage，不在這裡直接寫）──────────
   const updateQty = useCallback((id: string, delta: number) => {
@@ -145,33 +146,22 @@ function CheckoutContent() {
 
   // ── 繼續加點：回菜單前再保一次 cart + draft（雙重保障）──────────────────────
   const handleBack = useCallback(() => {
-    // 強制寫一次，確保最新狀態進 localStorage
     localStorage.setItem('nowait_cart', JSON.stringify(cart));
-
-    if (isPreOrder) {
-      localStorage.setItem(
-        'nowait_checkout_draft',
-        JSON.stringify({ customerName, phone, notes })
-      );
-    }
+    localStorage.setItem(
+      'nowait_checkout_draft',
+      JSON.stringify({ customerName, phone, notes })
+    );
 
     if (storeSlug) {
-      router.push(
-        `/s/${storeSlug}${
-          isDineIn && table
-            ? `?mode=dinein&table=${table}`
-            : isPreOrder
-            ? `?mode=${mode}`
-            : ''
-        }`
-      );
+      const backParams = new URLSearchParams();
+      if (isInstore) backParams.set('mode', 'instore');
+      if (table) backParams.set('table', table);
+      const qs = backParams.toString();
+      router.push(`/s/${storeSlug}${qs ? `?${qs}` : ''}`);
     } else {
       router.push('/');
     }
-  }, [
-    router, storeSlug, isDineIn, table,
-    isPreOrder, mode, cart, customerName, phone, notes,
-  ]);
+  }, [router, storeSlug, isInstore, table, cart, customerName, phone, notes]);
 
   // ── Shake 動畫 ─────────────────────────────────────────────────────────────
   const triggerShake = useCallback(() => {
@@ -183,24 +173,47 @@ function CheckoutContent() {
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitAttempted(true);
-    if (isPreOrder && contactInvalid) { triggerShake(); return; }
+    if (contactInvalid) { triggerShake(); return; }
     if (cart.length === 0) return;
     setLoading(true);
 
+    const orderCode = await generateOrderCode(supabase, storeSlug || '');
+
     const orderData: OrderData = {
-      id: `NW-${Date.now()}`,
+      id: orderCode,
       mode,
       table:        table         || undefined,
       storeName:    storeName     || undefined,
       storeSlug:    storeSlug     || undefined,
-      customerName: isPreOrder    ? customerName.trim() : undefined,
-      phone:        isPreOrder    ? phone.trim()         : undefined,
+      customerName: customerName.trim() || undefined,
+      phone:        phone.trim()        || undefined,
       notes:        notes.trim()  || undefined,
       cart, total,
       createdAt: new Date().toISOString(),
       status: 'pending',
     };
 
+    // ── 寫入 Supabase ──────────────────────────────────────────────────────────
+    try {
+      const { error: supabaseError } = await supabase.from('orders').insert({
+        order_code:     orderData.id,
+        store_slug:     storeSlug || null,
+        customer_name:  orderData.customerName ?? null,
+        customer_phone: orderData.phone ?? null,
+        items_json:     cart.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.quantity })),
+        subtotal:       total,
+        total_amount:   total,
+        status:         'pending',
+        source:         mode,
+        table_num:      table || null,
+        note:           notes.trim() || null,
+      });
+      if (supabaseError) console.error('[Checkout] Supabase 寫入失敗:', supabaseError);
+    } catch (e) {
+      console.error('[Checkout] Supabase 例外:', e);
+    }
+
+    // ── 寫入 localStorage（備份 + 成功頁面資料來源）─────────────────────────
     try {
       localStorage.setItem('nowait_order', JSON.stringify(orderData));
       try {
@@ -214,17 +227,18 @@ function CheckoutContent() {
       localStorage.removeItem('nowait_cart');
       localStorage.removeItem('nowait_checkout_draft');
     } catch (e) {
-      console.error('[Checkout] 寫入失敗:', e);
+      console.error('[Checkout] localStorage 寫入失敗:', e);
     }
 
-    setTimeout(() => { setLoading(false); router.push('/order/success'); }, 900);
+    setLoading(false);
+    router.push('/order/success');
   };
 
   // ── Loading State ──────────────────────────────────────────────────────────
   if (!isCartLoaded) return (
-    <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+    <main className="min-h-screen bg-[#0D0D0F] flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 rounded-full border-2 border-yellow-400/30 border-t-yellow-400 animate-spin" />
+        <div className="w-10 h-10 rounded-full border-2 border-[#C8973A]/30 border-t-yellow-400 animate-spin" />
         <p className="text-white/30 text-sm">載入中...</p>
       </div>
     </main>
@@ -232,7 +246,7 @@ function CheckoutContent() {
 
   // ── Empty Cart ─────────────────────────────────────────────────────────────
   if (cart.length === 0) return (
-    <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
+    <main className="min-h-screen bg-[#0D0D0F] flex items-center justify-center px-6">
       <div className="text-center space-y-6 max-w-xs">
         <p className="text-6xl">🛒</p>
         <div>
@@ -241,7 +255,7 @@ function CheckoutContent() {
         </div>
         <button
           onClick={handleBack}
-          className="w-full py-4 bg-yellow-400 text-black rounded-2xl font-black text-lg hover:bg-yellow-300 active:scale-95 transition-all"
+          className="w-full py-4 bg-[#C8973A] text-black rounded-2xl font-black text-lg hover:bg-[#D4A84A] active:scale-95 transition-all"
         >
           返回菜單點餐
         </button>
@@ -251,7 +265,7 @@ function CheckoutContent() {
 
   // ── Main UI ────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white">
+    <main className="min-h-screen bg-[#0D0D0F] text-white">
       <style>{`
         @keyframes shake {
           0%,100%{ transform:translateX(0) }
@@ -275,13 +289,13 @@ function CheckoutContent() {
 
         input:-webkit-autofill,
         textarea:-webkit-autofill {
-          -webkit-box-shadow: 0 0 0 1000px #111 inset;
+          -webkit-box-shadow: 0 0 0 1000px #1A1A1E inset;
           -webkit-text-fill-color: #fff;
         }
       `}</style>
 
       {/* ══ STICKY NAV ═══════════════════════════════════════════════════════ */}
-      <nav className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#0a0a0a]/90 backdrop-blur-xl">
+      <nav className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#0D0D0F]/90 backdrop-blur-xl">
         <div className="mx-auto max-w-[1280px] px-6 h-16 flex items-center justify-between">
 
           <button
@@ -296,13 +310,17 @@ function CheckoutContent() {
             flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-semibold
             ${isDineIn
               ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-              : 'bg-yellow-400/10 border border-yellow-400/20 text-yellow-400'}
+              : 'bg-[#C8973A]/10 border border-[#C8973A]/20 text-[#E4B55A]'}
           `}>
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDineIn ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`} />
-            {isDineIn ? `店內用餐${table ? `　桌號 ${table}` : ''}` : '預訂外帶'}
+            <span className={`text-xs font-bold ${isInstore ? 'text-emerald-300' : 'text-[#E4B55A]'}`}>
+              {isInstore ? '到店' : '遠端'}
+            </span>
+            <span className="text-white/20">·</span>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDineIn ? 'bg-emerald-400 animate-pulse' : 'bg-[#C8973A]'}`} />
+            {isDineIn ? `內用${table ? `　桌號 ${table}` : ''}` : '外帶'}
           </div>
 
-          <p className="text-sm font-black text-yellow-400">NT${total.toLocaleString()}</p>
+          <p className="text-sm font-black text-[#E4B55A]">NT${total.toLocaleString()}</p>
         </div>
       </nav>
 
@@ -325,7 +343,7 @@ function CheckoutContent() {
             {/* ╔══════════════════╗
                 ║   訂單內容卡片   ║
                 ╚══════════════════╝ */}
-            <div className="fu-2 rounded-3xl bg-[#111111] border border-white/10 overflow-hidden">
+            <div className="fu-2 rounded-3xl bg-[#1A1A1E] border border-white/10 overflow-hidden">
 
               {/* 標題列 */}
               <div className="px-8 py-6 border-b border-white/[0.08]">
@@ -356,7 +374,7 @@ function CheckoutContent() {
                       <span className="w-7 text-center font-black text-xl text-white tabular-nums">{item.quantity}</span>
                       <button
                         onClick={() => updateQty(item.id, +1)}
-                        className="w-10 h-10 rounded-full bg-yellow-400 hover:bg-yellow-300 active:scale-90 transition-all text-black font-bold text-xl flex items-center justify-center shadow-[0_4px_16px_rgba(250,204,21,0.25)]"
+                        className="w-10 h-10 rounded-full bg-[#C8973A] hover:bg-[#D4A84A] active:scale-90 transition-all text-black font-bold text-xl flex items-center justify-center shadow-[0_4px_16px_rgba(200,151,58,0.25)]"
                         aria-label="增加數量"
                       >
                         +
@@ -364,7 +382,7 @@ function CheckoutContent() {
                     </div>
 
                     <div className="w-28 text-right shrink-0">
-                      <p className="text-yellow-400 font-black text-xl tabular-nums">NT${(item.price * item.quantity).toLocaleString()}</p>
+                      <p className="text-[#E4B55A] font-black text-xl tabular-nums">NT${(item.price * item.quantity).toLocaleString()}</p>
                     </div>
                   </div>
                 ))}
@@ -376,7 +394,7 @@ function CheckoutContent() {
                   <span className="text-base text-white/30">共 {totalItems} 項商品</span>
                   <div className="flex items-center gap-2">
                     <span className="text-white/40 text-base">小計</span>
-                    <span className="text-yellow-400 font-black text-2xl tabular-nums">NT${total.toLocaleString()}</span>
+                    <span className="text-[#E4B55A] font-black text-2xl tabular-nums">NT${total.toLocaleString()}</span>
                   </div>
                 </div>
 
@@ -392,176 +410,160 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* ╔══════════════════════════════════╗
-                ║  聯絡資訊（外帶，唯一高亮區塊）  ║
-                ╚══════════════════════════════════╝ */}
-            {isPreOrder && (
-              <section
-                ref={contactRef}
-                className={`
-                  fu-3 rounded-3xl overflow-hidden transition-all duration-300
-                  ${contactShake ? 'do-shake' : ''}
-                  ${contactInvalid && submitAttempted
+            {/* ╔══════════════════════════════════════╗
+                ║  聯絡資訊（遠端必填；到店選填）      ║
+                ╚══════════════════════════════════════╝ */}
+            <section
+              ref={contactRef}
+              className={`
+                fu-3 rounded-3xl overflow-hidden transition-all duration-300
+                ${contactShake ? 'do-shake' : ''}
+                ${contactRequired
+                  ? contactInvalid && submitAttempted
                     ? 'border-2 border-red-500 shadow-[0_0_60px_rgba(239,68,68,0.12)]'
-                    : 'border-2 border-yellow-400/60 shadow-[0_0_60px_rgba(250,204,21,0.14)]'}
-                `}
-              >
-                {/* 黃色標題列 */}
-                <div className={`
-                  px-8 py-6 flex items-start justify-between gap-4
-                  ${contactInvalid && submitAttempted ? 'bg-red-500' : 'bg-yellow-400'}
-                `}>
-                  <div>
-                    <h2 className="text-2xl font-black text-black tracking-tight">聯絡資訊（必填）</h2>
-                    <p className="text-base font-semibold text-black/60 mt-1">
-                      {contactInvalid && submitAttempted
+                    : 'border-2 border-[#C8973A]/60 shadow-[0_0_60px_rgba(200,151,58,0.14)]'
+                  : 'border border-white/10'}
+              `}
+            >
+              {/* 標題列 */}
+              <div className={`
+                px-8 py-6 flex items-start justify-between gap-4
+                ${contactRequired
+                  ? contactInvalid && submitAttempted ? 'bg-red-500' : 'bg-[#C8973A]'
+                  : 'bg-[#1A1A1E] border-b border-white/[0.08]'}
+              `}>
+                <div>
+                  <h2 className={`text-2xl font-black tracking-tight ${contactRequired ? 'text-black' : 'text-white'}`}>
+                    聯絡資訊
+                  </h2>
+                  <p className={`text-base font-semibold mt-1 ${contactRequired ? 'text-black/60' : 'text-white/40'}`}>
+                    {contactRequired
+                      ? contactInvalid && submitAttempted
                         ? '⚠ 請填寫完整資料後再送出訂單'
-                        : '預訂外帶 · 店家需要您的資料確認訂單'}
-                    </p>
-                  </div>
-                  <span className={`
-                    shrink-0 mt-0.5 text-xs font-black px-3 py-1.5 rounded-xl
-                    ${contactInvalid && submitAttempted
+                        : '遠端點餐 · 店家需要您的資料確認訂單'
+                      : '到店掃碼 · 可選填聯絡資料'}
+                  </p>
+                </div>
+                <span className={`
+                  shrink-0 mt-0.5 text-xs font-black px-3 py-1.5 rounded-xl
+                  ${contactRequired
+                    ? contactInvalid && submitAttempted
                       ? 'bg-white text-red-500'
-                      : 'bg-black text-yellow-400'}
-                  `}>
-                    REQUIRED
-                  </span>
+                      : 'bg-black text-[#E4B55A]'
+                    : 'bg-white/10 text-white/40'}
+                `}>
+                  {contactRequired ? 'REQUIRED' : 'OPTIONAL'}
+                </span>
+              </div>
+
+              {/* 表單 */}
+              <div className={`
+                px-8 py-8 space-y-8
+                ${contactRequired
+                  ? contactInvalid && submitAttempted ? 'bg-[#1a0808]' : 'bg-[#141210]'
+                  : 'bg-[#1A1A1E]'}
+              `}>
+
+                {/* 桌號（內用才顯示） */}
+                {isDineIn && table && (
+                  <div className="flex items-center gap-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] px-6 py-5">
+                    <span className="text-3xl">🪑</span>
+                    <div>
+                      <p className="text-base text-white/40">您的桌位</p>
+                      <p className="text-3xl font-black text-white tracking-tight">
+                        桌號 <span className="text-[#E4B55A]">{table}</span>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 姓名 */}
+                <div>
+                  <label className="flex items-center gap-3 mb-3">
+                    <span className={`w-7 h-7 rounded-full text-sm font-black flex items-center justify-center shrink-0
+                      ${isNameValid ? 'bg-emerald-400 text-black' : contactRequired ? 'bg-[#C8973A] text-black' : 'bg-white/10 text-white/40'}`}>
+                      {isNameValid ? '✓' : '1'}
+                    </span>
+                    <span className="text-xl font-bold text-white">姓名</span>
+                    {contactRequired
+                      ? <span className="text-base font-bold text-red-400">必填</span>
+                      : <span className="text-base text-white/25">選填</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="請輸入姓名"
+                    className={`
+                      w-full bg-black/50 rounded-2xl px-6 py-5 text-white text-xl font-medium
+                      placeholder:text-white/20 outline-none transition-all duration-200
+                      ${showNameErr    ? 'border-2 border-red-500'
+                        : isNameValid  ? 'border-2 border-emerald-500/60'
+                        : 'border-2 border-white/10 focus:border-[#C8973A]/70'}
+                    `}
+                  />
+                  {showNameErr && <p className="mt-2 text-base text-red-400 font-semibold">⚠ 請填寫姓名</p>}
+                  {isNameValid && !showNameErr && <p className="mt-2 text-base text-emerald-400 font-semibold">✓ 已填寫</p>}
                 </div>
 
-                {/* 表單 */}
-                <div className={`
-                  px-8 py-8 space-y-8
-                  ${contactInvalid && submitAttempted ? 'bg-[#1a0808]' : 'bg-[#14120a]'}
-                `}>
-
-                  {/* 姓名 */}
-                  <div>
-                    <label className="flex items-center gap-3 mb-3">
-                      <span className={`w-7 h-7 rounded-full text-sm font-black flex items-center justify-center shrink-0
-                        ${isNameValid ? 'bg-emerald-400 text-black' : 'bg-yellow-400 text-black'}`}>
-                        {isNameValid ? '✓' : '1'}
-                      </span>
-                      <span className="text-xl font-bold text-white">聯絡姓名</span>
-                      <span className="text-base font-bold text-red-400">必填</span>
-                    </label>
+                {/* 手機 */}
+                <div>
+                  <label className="flex items-center gap-3 mb-3">
+                    <span className={`w-7 h-7 rounded-full text-sm font-black flex items-center justify-center shrink-0
+                      ${showPhoneOk ? 'bg-emerald-400 text-black' : contactRequired ? 'bg-[#C8973A] text-black' : 'bg-white/10 text-white/40'}`}>
+                      {showPhoneOk ? '✓' : '2'}
+                    </span>
+                    <span className="text-xl font-bold text-white">手機號碼</span>
+                    {contactRequired
+                      ? <span className="text-base font-bold text-red-400">必填</span>
+                      : <span className="text-base text-white/25">選填</span>}
+                  </label>
+                  <div className="relative">
                     <input
-                      type="text"
-                      value={customerName}
-                      onChange={e => setCustomerName(e.target.value)}
-                      placeholder="請輸入聯絡人姓名"
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="09xxxxxxxx（共 10 碼）"
+                      maxLength={10}
                       className={`
-                        w-full bg-black/50 rounded-2xl px-6 py-5 text-white text-xl font-medium
-                        placeholder:text-white/20 outline-none transition-all duration-200
-                        ${showNameErr    ? 'border-2 border-red-500'
-                          : isNameValid  ? 'border-2 border-emerald-500/60'
-                          : 'border-2 border-white/10 focus:border-yellow-400/70'}
+                        w-full bg-black/50 rounded-2xl px-6 py-5 pr-16 text-white text-xl font-medium
+                        placeholder:text-white/20 outline-none transition-all duration-200 tabular-nums
+                        ${showPhoneErr  ? 'border-2 border-red-500'
+                          : showPhoneOk ? 'border-2 border-emerald-500/60'
+                          : 'border-2 border-white/10 focus:border-[#C8973A]/70'}
                       `}
                     />
-                    {showNameErr && <p className="mt-2 text-base text-red-400 font-semibold">⚠ 請填寫聯絡姓名</p>}
-                    {isNameValid && !showNameErr && <p className="mt-2 text-base text-emerald-400 font-semibold">✓ 已填寫</p>}
+                    {showPhoneOk  && <span className="absolute right-6 top-1/2 -translate-y-1/2 text-emerald-400 text-2xl font-bold">✓</span>}
+                    {showPhoneErr && <span className="absolute right-6 top-1/2 -translate-y-1/2 text-red-400 text-2xl">✕</span>}
                   </div>
-
-                  {/* 手機 */}
-                  <div>
-                    <label className="flex items-center gap-3 mb-3">
-                      <span className={`w-7 h-7 rounded-full text-sm font-black flex items-center justify-center shrink-0
-                        ${showPhoneOk ? 'bg-emerald-400 text-black' : 'bg-yellow-400 text-black'}`}>
-                        {showPhoneOk ? '✓' : '2'}
-                      </span>
-                      <span className="text-xl font-bold text-white">手機號碼</span>
-                      <span className="text-base font-bold text-red-400">必填</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={e => setPhone(e.target.value)}
-                        placeholder="09xxxxxxxx（共 10 碼）"
-                        maxLength={10}
-                        className={`
-                          w-full bg-black/50 rounded-2xl px-6 py-5 pr-16 text-white text-xl font-medium
-                          placeholder:text-white/20 outline-none transition-all duration-200 tabular-nums
-                          ${showPhoneErr  ? 'border-2 border-red-500'
-                            : showPhoneOk ? 'border-2 border-emerald-500/60'
-                            : 'border-2 border-white/10 focus:border-yellow-400/70'}
-                        `}
-                      />
-                      {showPhoneOk  && <span className="absolute right-6 top-1/2 -translate-y-1/2 text-emerald-400 text-2xl font-bold">✓</span>}
-                      {showPhoneErr && <span className="absolute right-6 top-1/2 -translate-y-1/2 text-red-400 text-2xl">✕</span>}
-                    </div>
-                    {showPhoneErr && <p className="mt-2 text-base text-red-400 font-semibold">⚠ 需為 09 開頭，共 10 碼</p>}
-                    {showPhoneOk  && <p className="mt-2 text-base text-emerald-400 font-semibold">✓ 格式正確</p>}
-                  </div>
-
-                  {/* 備註 */}
-                  <div>
-                    <label className="flex items-center gap-3 mb-3">
-                      <span className="w-7 h-7 rounded-full bg-white/10 text-white/30 text-sm font-black flex items-center justify-center shrink-0">3</span>
-                      <span className="text-xl font-bold text-white/50">備註</span>
-                      <span className="text-base text-white/25">選填</span>
-                    </label>
-                    <textarea
-                      value={notes}
-                      onChange={e => setNotes(e.target.value)}
-                      placeholder="例：不要辣、過敏說明、預計幾點來取..."
-                      rows={3}
-                      className="w-full bg-black/50 border-2 border-white/10 rounded-2xl px-6 py-5 text-white text-xl font-medium placeholder:text-white/20 focus:border-yellow-400/50 outline-none transition-all duration-200 resize-none"
-                    />
-                  </div>
+                  {showPhoneErr && <p className="mt-2 text-base text-red-400 font-semibold">{phone.trim().length === 0 ? '⚠ 請填寫手機號碼' : '⚠ 需為 09 開頭，共 10 碼'}</p>}
+                  {showPhoneOk  && <p className="mt-2 text-base text-emerald-400 font-semibold">✓ 格式正確</p>}
                 </div>
-              </section>
-            )}
 
-            {/* ╔══════════════════════════════╗
-                ║  用餐資訊（內用，中性卡片）  ║
-                ╚══════════════════════════════╝ */}
-            {isDineIn && (
-              <div className="fu-3 rounded-3xl bg-[#111111] border border-white/10 overflow-hidden">
-                <div className="px-8 py-6 border-b border-white/[0.08] flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-black text-white tracking-tight">用餐資訊</h2>
-                    <p className="text-base text-white/40 mt-1">
-                      {table ? `訂單將直接送至桌號 ${table}` : '訂單將送至您的桌位'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-sm font-bold text-emerald-400">店內用餐</span>
-                  </div>
-                </div>
-                <div className="px-8 py-7">
-                  {table && (
-                    <div className="flex items-center gap-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] px-6 py-5 mb-7">
-                      <span className="text-3xl">🪑</span>
-                      <div>
-                        <p className="text-base text-white/40">您的桌位</p>
-                        <p className="text-3xl font-black text-white tracking-tight">
-                          桌號 <span className="text-yellow-400">{table}</span>
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  <label className="block text-xl font-bold text-white/50 mb-3">
-                    備註 <span className="text-white/25 font-normal text-base ml-2">選填</span>
+                {/* 備註 */}
+                <div>
+                  <label className="flex items-center gap-3 mb-3">
+                    <span className="w-7 h-7 rounded-full bg-white/10 text-white/30 text-sm font-black flex items-center justify-center shrink-0">3</span>
+                    <span className="text-xl font-bold text-white/50">備註</span>
+                    <span className="text-base text-white/25">選填</span>
                   </label>
                   <textarea
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
                     placeholder="例：不要辣、過敏說明、特殊需求..."
                     rows={3}
-                    className="w-full bg-black/50 border-2 border-white/10 rounded-2xl px-6 py-5 text-white text-xl font-medium placeholder:text-white/20 focus:border-yellow-400/50 outline-none transition-all duration-200 resize-none"
+                    className="w-full bg-black/50 border-2 border-white/10 rounded-2xl px-6 py-5 text-white text-xl font-medium placeholder:text-white/20 focus:border-[#C8973A]/50 outline-none transition-all duration-200 resize-none"
                   />
                 </div>
               </div>
-            )}
+            </section>
 
           </div>
 
           {/* ─── RIGHT：訂單摘要 Sidebar ──────────────────────────────────── */}
           <aside className="fu-4 sticky top-[80px] space-y-4">
 
-            <div className="rounded-3xl bg-[#111111] border border-white/10 overflow-hidden">
+            <div className="rounded-3xl bg-[#1A1A1E] border border-white/10 overflow-hidden">
 
               <div className="px-7 py-6 border-b border-white/[0.08]">
                 <h2 className="text-2xl font-black text-white tracking-tight">訂單摘要</h2>
@@ -592,20 +594,20 @@ function CheckoutContent() {
                 {table && (
                   <div className="flex justify-between items-center">
                     <span className="text-base text-white/35">桌號</span>
-                    <span className="text-base text-yellow-400 font-bold">#{table}</span>
+                    <span className="text-base text-[#E4B55A] font-bold">#{table}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center pt-4 border-t border-white/[0.08]">
                   <span className="text-xl font-black text-white">總計</span>
-                  <span className="text-yellow-400 font-black text-3xl tabular-nums tracking-tight">
+                  <span className="text-[#E4B55A] font-black text-3xl tabular-nums tracking-tight">
                     NT${total.toLocaleString()}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* 警告 Banner */}
-            {isPreOrder && (
+            {/* 警告 Banner（遠端才需要） */}
+            {contactRequired && (
               <div className={`
                 rounded-2xl px-5 py-4 border text-base font-semibold leading-7 transition-all duration-300
                 ${contactInvalid && submitAttempted
@@ -613,8 +615,8 @@ function CheckoutContent() {
                   : 'bg-white/[0.03] border-white/[0.08] text-white/40'}
               `}>
                 {contactInvalid && submitAttempted
-                  ? <><span className="text-red-400 mr-1">❌</span>請先填寫左側 <strong className="text-white">聯絡姓名與手機</strong> 再送出</>
-                  : <><span className="text-yellow-400 mr-1">⚠</span>送出前請確認左側 <strong className="text-white/70">聯絡資訊</strong> 已填寫完整</>
+                  ? <><span className="text-red-400 mr-1">❌</span>請先填寫左側 <strong className="text-white">姓名與手機</strong> 再送出</>
+                  : <><span className="text-[#E4B55A] mr-1">⚠</span>送出前請確認左側 <strong className="text-white/70">聯絡資訊</strong> 已填寫完整</>
                 }
               </div>
             )}
@@ -627,7 +629,7 @@ function CheckoutContent() {
                 w-full py-6 rounded-2xl font-black text-xl tracking-wide transition-all duration-200 active:scale-[0.97]
                 ${loading
                   ? 'bg-white/[0.06] text-white/25 cursor-not-allowed border border-white/[0.08]'
-                  : 'bg-yellow-400 text-black hover:bg-yellow-300 shadow-[0_8px_40px_rgba(250,204,21,0.28)] hover:shadow-[0_8px_48px_rgba(250,204,21,0.40)]'}
+                  : 'bg-[#C8973A] text-black hover:bg-[#D4A84A] shadow-[0_8px_40px_rgba(200,151,58,0.28)] hover:shadow-[0_8px_48px_rgba(200,151,58,0.40)]'}
               `}
             >
               {loading
@@ -640,14 +642,16 @@ function CheckoutContent() {
                     處理中...
                   </span>
                 )
-                : `${isDineIn ? '確認點餐' : '確認下單'}　·　NT$${total.toLocaleString()}`
+                : `${isDineIn ? '確認點餐' : '確認外帶'}　·　NT$${total.toLocaleString()}`
               }
             </button>
 
             <p className="text-center text-sm text-white/20 px-2 leading-relaxed">
               {isDineIn
-                ? '送出後即確認訂單，餐點將直接送至您的桌位'
-                : '送出後店家將依您的聯絡資訊確認預訂'}
+                ? '送出後即確認訂單，餐點將直接送至桌位'
+                : contactRequired
+                  ? '送出後店家將依您的聯絡資訊確認預訂'
+                  : '送出後即確認外帶訂單'}
             </p>
           </aside>
 
@@ -661,9 +665,9 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <main className="min-h-screen bg-[#0D0D0F] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-yellow-400/30 border-t-yellow-400 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-[#C8973A]/30 border-t-yellow-400 animate-spin" />
           <p className="text-white/30 text-sm">載入中...</p>
         </div>
       </main>
