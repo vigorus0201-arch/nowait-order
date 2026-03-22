@@ -458,7 +458,7 @@ export default function OrdersPage() {
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
 
           {/* ── LEFT: Order List ── */}
-          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
+          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0, border: '3px solid red', background: 'rgba(255,0,0,0.1)' }}>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', gap: '16px' }}>
                 <div style={{ width: '36px', height: '36px', border: `3px solid ${C.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
@@ -476,7 +476,7 @@ export default function OrdersPage() {
                   共 {filtered.length} 筆
                 </p>
                 {filtered.map((order) => (
-                  <div key={order.id} className="order-card" style={{ borderRadius: '14px', transition: 'background 0.15s' }}>
+                  <div key={order.id} className="order-card" style={{ borderRadius: '14px', transition: 'background 0.15s', border: '2px solid blue' }}>
                     <OrderCard
                       order={order}
                       isActive={selectedOrder?.id === order.id}
