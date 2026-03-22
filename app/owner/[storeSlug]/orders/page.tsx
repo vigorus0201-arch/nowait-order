@@ -396,7 +396,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: FONT, WebkitFontSmoothing: 'antialiased', width: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
         {/* ── Filter Bar ── */}
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -455,10 +455,10 @@ export default function OrdersPage() {
         </div>
 
         {/* ── Body ── */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
 
           {/* ── LEFT: Order List ── */}
-          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 80px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', gap: '16px' }}>
                 <div style={{ width: '36px', height: '36px', border: `3px solid ${C.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
