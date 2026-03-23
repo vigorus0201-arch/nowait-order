@@ -434,6 +434,13 @@ export default function PosPage() {
             z-index: 10 !important;
           }
         }
+        /* Desktop: give pos-outer a definite height so inner overflow:scroll works */
+        @media (min-width: 768px) {
+          .pos-outer {
+            height: 100vh;
+            overflow: hidden;
+          }
+        }
       `}</style>
 
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}
