@@ -68,6 +68,17 @@ claude
 - 主題顏色統一從 `lib/themes.ts` 取值，不 hardcode
 - ⚠️ 寫程式前必須先列出完整流程與功能規格，經過確認後才開始實作
 
+### payments 開發注意事項
+- method 是付款方式（promoter_cash / bank_transfer / cash）
+- status 是付款狀態（pending_cash / pending_bank / confirmed / cancelled）
+- 兩個欄位不能混用，查詢時要用正確的欄位
+- ❌ 錯誤：if (payment.method === 'pending_cash')
+- ✅ 正確：if (payment.status === 'pending_cash')
+
+### 推廣者系統開發提示（給 Claude Code）
+每次開始開發推廣者系統前，在提示裡加上：
+注意：payment.method 是付款方式，payment.status 是付款狀態，兩個不能混用
+
 ---
 
 ## 主題系統
