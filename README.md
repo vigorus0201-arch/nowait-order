@@ -162,6 +162,12 @@ SUPABASE_SERVICE_ROLE_KEY=（Supabase Settings > API > service_role）
 ### AI 工具
 
 **Claude.ai + Claude Code** — 主力開發 AI
+- 方案：Pro 年繳
+- 購買日期：2026/3/21
+- 金額：US$200.00
+- 自動續約：2027/3/21
+- 付款方式：Visa 末四碼 0206
+- 包含：Claude.ai + Claude Code
 - 2026/3/22：完成所有頁面開發與手機版修復
 - 2026/3/23：主題系統設計、Vercel 部署全流程協助
 
