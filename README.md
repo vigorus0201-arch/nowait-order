@@ -123,6 +123,11 @@ SUPABASE_SERVICE_ROLE_KEY=（Supabase Settings > API > service_role）
 - 2026/3/23 15:40：GitHub 授權，匯入專案
 - 2026/3/23 16:00：部署成功，系統正式上線
 - 2026/3/23 16:09：綁定 nowaitnow.com，SSL 完成
+- 方案：Pro Trial（14天免費）
+- 試用開始：2026/3/23
+- 試用到期：2026/4/6
+- 到期後費用：$20/月
+- 備註：商業用途需維持 Pro 方案
 
 ### 網域與安全
 
