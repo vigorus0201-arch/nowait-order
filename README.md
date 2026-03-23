@@ -53,8 +53,8 @@ claude
 | Vercel 部署 | ✅ 2026/3/23 完成 |
 | nowaitnow.com 綁定 | ✅ 2026/3/23 完成 |
 | 主題系統（lib/themes.ts） | ✅ Dark Premium + Fresh Green |
-| Line OA | ❌ 待建立 |
-| Make.com 自動化 | ❌ 待建立 |
+| Line OA | ✅ 已建立（2026/3/23） |
+| Make.com 自動化 | ✅ 已建立（2026/3/23） |
 
 ---
 
@@ -129,6 +129,23 @@ SUPABASE_SERVICE_ROLE_KEY=（Supabase Settings > API > service_role）
 - 到期後費用：$20/月
 - 備註：商業用途需維持 Pro 方案
 
+### 行銷與自動化
+
+**Line OA** — `account.line.biz`
+- 帳號名稱：NoWait Now
+- 基本 ID：@727vcikq
+- 建立日期：2026/3/23
+- 方案：輕用量（免費）
+- 業種：企業、組織・網路、軟體
+- 狀態：✅ 已建立
+
+**Make.com** — `make.com`（帳號：vigorus.0201@gmail.com）
+- 功能：自動化工作流程，串接 Supabase 新訂單通知等
+- 方案：Free（1,000 次/月）
+- 建立日期：2026/3/23
+- 重置日：2026/4/23
+- 狀態：✅ 已建立
+
 ### 網域與安全
 
 **Cloudflare** — `cloudflare.com`（帳號：vigorus.0201@gmail.com）
@@ -169,8 +186,8 @@ SUPABASE_SERVICE_ROLE_KEY=（Supabase Settings > API > service_role）
 
 ### 🔴 本週立刻做
 
-- [ ] Line OA 建立（account.line.biz）→ 建立「NoWait Now」官方帳號
-- [ ] Make.com 註冊（make.com）→ 自動化基礎
+- [x] Line OA 建立（account.line.biz）→ 建立「NoWait Now」官方帳號 @727vcikq
+- [x] Make.com 註冊（make.com）→ 自動化基礎，Free 方案已建立
 
 ### 🟡 本週內完成
 
