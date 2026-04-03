@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -26,9 +26,24 @@ export default function OwnerLoginPage() {
   const params    = useParams()
   const storeSlug = params?.storeSlug as string
 
-  const [pin,     setPin]     = useState('')
-  const [error,   setError]   = useState('')
-  const [loading, setLoading] = useState(false)
+  const [pin,       setPin]       = useState('')
+  const [error,     setError]     = useState('')
+  const [loading,   setLoading]   = useState(false)
+  const [storeName, setStoreName] = useState('')
+
+  useEffect(() => {
+    if (!storeSlug) return;
+    const supabase = createClient()
+    supabase
+      .from('stores')
+      .select('name')
+      .eq('slug', storeSlug)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data?.name) setStoreName(data.name);
+      })
+      .catch(() => { /* fallback: 顯示 storeSlug */ });
+  }, [storeSlug])
 
   const handleLogin = async () => {
     if (!pin || pin.length < 4) { setError('請輸入 PIN 碼'); return }
@@ -112,7 +127,7 @@ export default function OwnerLoginPage() {
             老闆後台登入
           </h1>
           <p style={{ fontSize: '13px', color: C.muted, margin: 0, letterSpacing: '0.04em' }}>
-            {storeSlug}
+            {storeName || storeSlug}
           </p>
         </div>
 

@@ -238,9 +238,26 @@ export default function KitchenPage() {
   const [loading,     setLoading]     = useState(true);
   const [filter,      setFilter]      = useState<OrderStatus | 'all'>('all');
   const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [storeName,     setStoreName]     = useState('');
+  const [storeNotFound, setStoreNotFound] = useState(false);
 
   const prevIdsRef   = useRef<Set<string>>(new Set());
   const audioCtxRef  = useRef<AudioContext | null>(null);
+
+  // ── Fetch store name ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!storeSlug) return;
+    supabase
+      .from('stores')
+      .select('name')
+      .eq('slug', storeSlug)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data?.name) setStoreName(data.name);
+        else if (!error && !data) setStoreNotFound(true);
+      })
+      .catch(() => { /* fallback: storeName 維持空字串，顯示 storeSlug */ });
+  }, [storeSlug]);
 
   // ── Sound alert ────────────────────────────────────────────────────────────
   const playAlert = useCallback(() => {
@@ -367,6 +384,19 @@ export default function KitchenPage() {
     { key: 'completed' as const, label: '完成',   color: '#22C55E' },
   ];
 
+  // ── Guard: invalid slug ────────────────────────────────────────────────────
+  if (storeSlug && storeNotFound) {
+    return (
+      <main style={{ minHeight: '100vh', background: '#0D0D0F', color: '#fff', fontFamily: "'DM Sans', 'Noto Serif TC', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</p>
+          <p style={{ fontSize: '18px', fontWeight: 700, color: '#F0EDE8', marginBottom: '8px' }}>此廚房連結不存在</p>
+          <p style={{ fontSize: '13px', color: 'rgba(240,237,232,0.45)' }}>請確認店家連結是否正確</p>
+        </div>
+      </main>
+    );
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <main style={{
@@ -394,7 +424,7 @@ export default function KitchenPage() {
           <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '0.02em' }}>Kitchen Display</span>
           {storeSlug && (
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
-              {storeSlug}
+              {storeName || storeSlug}
             </span>
           )}
         </div>

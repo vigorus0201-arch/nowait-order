@@ -126,6 +126,31 @@ export default function StorePage() {
     const fetchAll = async () => {
       try {
         setError('');
+
+        // ── stores 接入點（預留）────────────────────────────────────────────
+        // 查詢 stores 表取得店家資料；若表不存在或查無資料，fallback 繼續舊流程
+        try {
+          const { data: storeData, error: storeError } = await supabase
+            .from('stores')
+            .select('slug, name')
+            .eq('slug', storeSlug)
+            .maybeSingle();
+          if (storeError) {
+            console.warn('[Store] stores 表查詢失敗，使用 fallback 流程', storeError.message);
+          } else if (!storeData) {
+            console.warn('[Store] stores 表查無此 slug:', storeSlug, '，使用 fallback 流程');
+            setError('此店家不存在或暫時無法使用。');
+            setLoading(false);
+            return;
+          } else {
+            console.log('[Store] stores 資料已取得:', storeData.name);
+            // TODO: 未來可在此處加入 operating_status 判斷（如暫停接單）
+          }
+        } catch (storeCheckErr) {
+          console.warn('[Store] stores 檢查異常，忽略並繼續', storeCheckErr);
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         const [menuRes, catRes] = await Promise.all([
           supabase.from('menu').select('*').eq('store_slug', storeSlug).neq('available', false).order('sort_order', { ascending: true }),
           supabase.from('categories').select('id, name, sort_order').eq('store_slug', storeSlug).order('sort_order', { ascending: true }),
